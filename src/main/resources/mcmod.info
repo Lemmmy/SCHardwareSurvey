@@ -1,0 +1,16 @@
+[
+  {
+    "modid": "schardwaresurvey",
+    "name": "SwitchCraft Hardware Survey",
+    "description": "Submits useful hardware analytics to SwitchCraft to aid the development of CC:Tweaked.",
+    "version": "${version}",
+    "mcversion": "${mcversion}",
+    "url": "",
+    "updateUrl": "",
+    "authorList": ["Lemmmy"],
+    "credits": "Lemmmy, who is very cool",
+    "logoFile": "",
+    "screenshots": [],
+    "dependencies": []
+  }
+]
