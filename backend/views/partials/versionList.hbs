@@ -1,0 +1,18 @@
+<table class="table table-sm table-striped table-bordered">
+<thead>
+  <tr>
+    <th>OpenGL Version</th>
+    <th>Users</th>
+    <th>%</th>
+  </tr>
+</thead>
+<tbody>
+  {{#each versions}}
+  <tr>
+    <th>{{version}}</th>
+    <th>{{count}}</th>
+    <th>{{percentage count @root.count}}</th>
+  </tr>
+  {{/each}}
+</tbody>
+</table>

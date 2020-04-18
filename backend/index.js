@@ -1,5 +1,6 @@
 require("dotenv").config();
 
+const _ = require("lodash");
 const path = require("path");
 
 const express = require("express");
@@ -13,6 +14,7 @@ const STATS = require("./stats.json");
 
 const UUID = /^[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}$/;
 const UA_MATCH = new RegExp(`^SCHWS/${process.env.MC_VERSION}/${process.env.MOD_VERSION}$`);
+const GL_VERSION = /^(\d+\.\d+)/;
 
 let collection;
 
@@ -21,7 +23,13 @@ const app = express();
 app.use(bodyParser.json());
 
 app.engine(".hbs", exphbs({
-  extname: ".hbs"
+  extname: ".hbs",
+  helpers: {
+    /** Returns a formatted percentage */
+    percentage(n, m) {
+      return ((n / m) * 100).toFixed(1);
+    }
+  }
 }));
 app.set("view engine", ".hbs");
 
@@ -31,18 +39,18 @@ function validateUserAgent(req) {
 }
 
 app.post("/submit/:token", async (req, res) => {
-  if (!req.params.token || !UUID.test(req.params.token)) 
+  if (!req.params.token || !UUID.test(req.params.token))
     return res.json({ ok: false, error: "invalid_token" });
-  if (!req.body || !req.body.stats) 
+  if (!req.body || !req.body.stats)
     return res.json({ ok: false, error: "missing_stats" });
-  if (!validateUserAgent(req)) 
+  if (!validateUserAgent(req))
     return res.json({ ok: false, error: "invalid_client" });
 
   const { stats } = req.body;
-  
+
   // validate the stats
   for (let key in stats) {
-    if (!key.startsWith("jvm_arg[") && (!STATS.includes(key) || typeof(stats[key]) !== "string")) 
+    if (!key.startsWith("jvm_arg[") && (!STATS.includes(key) || typeof(stats[key]) !== "string"))
       return res.json({ ok: false, error: "invalid_stat", stat: key });
 
     stats[key] = stats[key].substring(0, Math.min(stats[key].length, 512));
@@ -56,7 +64,7 @@ app.post("/submit/:token", async (req, res) => {
 
     for (let i = 0; i < jvmArgsCount; i++) {
       const jvmArgKey = `jvm_arg[${i}]`;
-      if (!stats[jvmArgKey] || typeof(stats[jvmArgKey]) !== "string") 
+      if (!stats[jvmArgKey] || typeof(stats[jvmArgKey]) !== "string")
         return res.json({ ok: false, error: "invalid_jvm_args" });
 
       jvmArgs[i] = stats[jvmArgKey];
@@ -82,14 +90,106 @@ app.post("/submit/:token", async (req, res) => {
   res.json({ ok: true, upliftHeadThought: zen() });
 });
 
-app.use((req, res) => {
-  res.render("home");
+/** Simplifies an OpenGL version string down to a major.minor version. */
+function simplifyOpenGLVersion(version) {
+  const match = GL_VERSION.exec(version.trim());
+  if (!match) return "unknown";
+  return match[1];
+}
+
+/** Compares two OpenGL versions. Returns true if `b` >= `a`. */
+function compareOpenGLVersions(a, b) {
+  return b.localeCompare(a, undefined, { numeric: true, sensitivity: "base" }) >= 0
+}
+
+/** Check if a result has the specified OpenGL capability. */
+function hasOpenGLCapability(result, cap) {
+  return result[`gl_caps[${cap}]`] === "true";
+}
+
+/** Returns an array of tuples by [version, users, percentage]. */
+function getOpenGLVersions(results) {
+  return _(results)
+    .map("opengl_version")
+    .groupBy(simplifyOpenGLVersion)
+    .mapValues("length")
+    .toPairs()
+    .sortBy(v => v[0])
+    .map(v => ({ version: v[0], count: v[1] }))
+    .value();
+}
+
+/** Returns an array of features and which users support them. */
+function getOpenGLFeatures(results, openGLVersions) {
+  return {
+    features: [
+      {
+        name: "Texture Buffer Objects",
+        link: "https://www.khronos.org/opengl/wiki/Buffer_Texture",
+        count: _(results)
+          .filter(r =>
+            compareOpenGLVersions("3.1", simplifyOpenGLVersion(r.opengl_version)) ||
+            hasOpenGLCapability(r, "ARB_texture_buffer_object") ||
+            hasOpenGLCapability(r, "EXT_texture_buffer_object")
+          )
+          .size()
+      },
+      {
+        name: "Uniform Buffer Objects",
+        link: "https://www.khronos.org/opengl/wiki/Uniform_Buffer_Object",
+        count: _(results)
+          .filter(r =>
+            compareOpenGLVersions("3.1", simplifyOpenGLVersion(r.opengl_version)) ||
+            hasOpenGLCapability(r, "ARB_uniform_buffer_object")
+          )
+          .size()
+      }
+    ],
+    individualFeatures: [
+      {
+        name: "OpenGL 3.1",
+        count: _(openGLVersions)
+          .filter(v => compareOpenGLVersions("3.1", v.version))
+          .sumBy("count")
+      },
+      {
+        name: "ARB_texture_buffer_object",
+        link: "https://www.khronos.org/registry/OpenGL/extensions/ARB/ARB_texture_buffer_object.txt",
+        count: _(results).filter(r => hasOpenGLCapability(r, "ARB_texture_buffer_object")).size()
+      },
+      {
+        name: "EXT_texture_buffer_object",
+        link: "https://www.khronos.org/registry/OpenGL/extensions/EXT/EXT_texture_buffer_object.txt",
+        count: _(results).filter(r => hasOpenGLCapability(r, "EXT_texture_buffer_object")).size()
+      },
+      {
+        name: "ARB_uniform_buffer_object",
+        link: "http://www.opengl.org/registry/specs/ARB/uniform_buffer_object.txt",
+        count: _(results).filter(r => hasOpenGLCapability(r, "ARB_uniform_buffer_object")).size()
+      }
+    ]
+  }
+}
+
+app.use(async (req, res) => {
+  // We can process the results in the DB, but considering they're all going to be used at once anyway, we may as well
+  // process them here.
+  const results = _.map(await collection.find({}).toArray(), "stats");
+  const count = results.length;
+  const openGLVersions = getOpenGLVersions(results);
+  const features = getOpenGLFeatures(results, openGLVersions);
+
+  res.render("home", {
+    count,
+    openGLVersions,
+    features
+  });
 });
 
 MongoClient.connect("mongodb://localhost:27017/schws", {
   useUnifiedTopology: true,
   useNewUrlParser: true,
-}).then(client => {  
+}).then(client => {
   collection = client.db().collection("surveys");
   collection.createIndex({ "token": 1 }, { unique: true });
 
