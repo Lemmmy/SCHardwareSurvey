@@ -107,16 +107,21 @@ function hasOpenGLCapability(result, cap) {
   return result[`gl_caps[${cap}]`] === "true";
 }
 
-/** Returns an array of tuples by [version, users, percentage]. */
-function getOpenGLVersions(results) {
+/** Returns an array of tuples by [value, users, percentage]. */
+function getGrouped(results, key, groupBy) {
   return _(results)
-    .map("opengl_version")
-    .groupBy(simplifyOpenGLVersion)
+    .map(key)
+    .groupBy(groupBy)
     .mapValues("length")
     .toPairs()
     .sortBy(v => v[0])
-    .map(v => ({ version: v[0], count: v[1] }))
+    .map(v => ({ value: v[0], count: v[1] }))
     .value();
+}
+
+/** Returns an array of tuples by [version, users, percentage]. */
+function getOpenGLVersions(results) {
+  return getGrouped(results, "opengl_version", simplifyOpenGLVersion);
 }
 
 /** Returns an array of features and which users support them. */
@@ -124,7 +129,7 @@ function getOpenGLFeatures(results, openGLVersions) {
   return {
     features: [
       {
-        name: "Texture Buffer Objects",
+        value: "Texture Buffer Objects",
         link: "https://www.khronos.org/opengl/wiki/Buffer_Texture",
         count: _(results)
           .filter(r =>
@@ -135,7 +140,7 @@ function getOpenGLFeatures(results, openGLVersions) {
           .size()
       },
       {
-        name: "Uniform Buffer Objects",
+        value: "Uniform Buffer Objects",
         link: "https://www.khronos.org/opengl/wiki/Uniform_Buffer_Object",
         count: _(results)
           .filter(r =>
@@ -147,28 +152,68 @@ function getOpenGLFeatures(results, openGLVersions) {
     ],
     individualFeatures: [
       {
-        name: "OpenGL 3.1",
+        value: "OpenGL 3.1",
         count: _(openGLVersions)
-          .filter(v => compareOpenGLVersions("3.1", v.version))
+          .filter(v => compareOpenGLVersions("3.1", v.value))
           .sumBy("count")
       },
       {
-        name: "ARB_texture_buffer_object",
+        value: "ARB_texture_buffer_object",
         link: "https://www.khronos.org/registry/OpenGL/extensions/ARB/ARB_texture_buffer_object.txt",
         count: _(results).filter(r => hasOpenGLCapability(r, "ARB_texture_buffer_object")).size()
       },
       {
-        name: "EXT_texture_buffer_object",
+        value: "EXT_texture_buffer_object",
         link: "https://www.khronos.org/registry/OpenGL/extensions/EXT/EXT_texture_buffer_object.txt",
         count: _(results).filter(r => hasOpenGLCapability(r, "EXT_texture_buffer_object")).size()
       },
       {
-        name: "ARB_uniform_buffer_object",
+        value: "ARB_uniform_buffer_object",
         link: "http://www.opengl.org/registry/specs/ARB/uniform_buffer_object.txt",
         count: _(results).filter(r => hasOpenGLCapability(r, "ARB_uniform_buffer_object")).size()
       }
-    ]
+    ],
+    maxTextureSize: _(getGrouped(results, "gl_max_texture_size"))
+      .mapValues((value, key) => key === "value" ? parseInt(value) : value)
+      .sortBy("value")
+      .value()
   }
+}
+
+/** Returns an array of tuples by [os, users, percentage]. */
+function getOSList(results) {
+  return getGrouped(results, "os_name");
+}
+
+/** Returns an array of tuples by [arch, users, percentage]. */
+function getOSArches(results) {
+  const arches = getGrouped(results, "os_architecture", a => a.replace(/^x86_64$/, "amd64"));
+  arches.forEach(arch => {
+    if (arch.value === "aarch64") {
+      arch.link = "https://i.lemmmy.pw/oE9n.jpg";
+    }
+  });
+  return arches;
+}
+
+/** Returns an array of tuples by [mod, users, percentage]. */
+function getModList(results) {
+  return [
+    {
+      value: "OptiFine",
+      count: _(results).filter(r => !!r.optifine_version).size()
+    },
+    {
+      value: "FoamFix",
+      count: _(results).filter(r => !!r.foamfix_version).size()
+    },
+    {
+      value: "MultiMC",
+      count: _(results)
+        .filter(r => r.launched_version && /^MultiMC/.test(r.launched_version))
+        .size()
+    }
+  ]
 }
 
 app.use(async (req, res) => {
@@ -177,12 +222,14 @@ app.use(async (req, res) => {
   const results = _.map(await collection.find({}).toArray(), "stats");
   const count = results.length;
   const openGLVersions = getOpenGLVersions(results);
-  const features = getOpenGLFeatures(results, openGLVersions);
 
   res.render("home", {
     count,
     openGLVersions,
-    features
+    features: getOpenGLFeatures(results, openGLVersions),
+    osList: getOSList(results),
+    osArches: getOSArches(results),
+    modList: getModList(results),
   });
 });
 

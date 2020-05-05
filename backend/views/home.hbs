@@ -20,16 +20,45 @@
   <div class="col-12 col-sm-6">
     <h3>OpenGL Versions</h3>
     <p class="text-muted">The maximum OpenGL version supported by each user's graphics driver.</p>
-    {{> versionList versions=openGLVersions }}
+    {{> basicList heading="OpenGL Version" list=openGLVersions }}
   </div>
 
   <!-- Feature Support -->
   <div class="col-12 col-sm-6">
     <h3>Feature Support</h3>
     <p class="text-muted">Supported features we are interested in.</p>
-    {{> featureList features=features.features }}
+    {{> basicList heading="Feature" list=features.features }}
 
     <h4>Individual Features</h4>
-    {{> featureList features=features.individualFeatures }}
+    {{> basicList heading="Feature" list=features.individualFeatures }}
+
+    <h4>Max Texture Size</h4>
+    {{> basicList heading="Texture Size" list=features.maxTextureSize }}
+  </div>
+</div>
+
+<hr />
+
+<div class="row">
+  <!-- Operating Systems -->
+  <div class="col-12 col-sm-6">
+    <h3>Operating Systems</h3>
+    {{> basicList heading="Operating System" list=osList }}
+  </div>
+
+  <!-- OS Architectures -->
+  <div class="col-12 col-sm-6">
+    <h3>Architectures</h3>
+    {{> basicList heading="Architecture" list=osArches }}
+  </div>
+</div>
+
+<hr />
+
+<div class="row">
+  <!-- Mods -->
+  <div class="col-12 col-sm-6">
+    <h3>Mods and Companion Apps</h3>
+    {{> basicList heading="Mod" list=modList }}
   </div>
 </div>

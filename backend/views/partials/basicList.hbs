@@ -1,15 +1,15 @@
 <table class="table table-sm table-striped table-bordered">
 <thead>
   <tr>
-    <th>OpenGL Version</th>
+    <th>{{heading}}</th>
     <th>Users</th>
     <th>%</th>
   </tr>
 </thead>
 <tbody>
-  {{#each versions}}
+  {{#each list}}
   <tr>
-    <th>{{version}}</th>
+    <th>{{#if link}}<a href="{{link}}">{{value}}</a>{{else}}{{value}}{{/if}}</th>
     <th>{{count}}</th>
     <th>{{percentage count @root.count}}</th>
   </tr>
